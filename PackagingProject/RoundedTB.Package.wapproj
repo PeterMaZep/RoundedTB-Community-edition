@@ -76,7 +76,8 @@
     <DefaultLanguage>en-US</DefaultLanguage>
     <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
     <GenerateAppInstallerFile>False</GenerateAppInstallerFile>
-    <PackageCertificateThumbprint>949AB122C53DAF37D8272CA0AA2350D81DDE2329</PackageCertificateThumbprint>
+    <PackageCertificateThumbprint>090E761595DF9A294A6D4A47A66E73359ECC572C</PackageCertificateThumbprint>
+    <PackageCertificateKeyFile>..\RoundedTB.pfx</PackageCertificateKeyFile>
     <AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
     <AppxAutoIncrementPackageRevision>False</AppxAutoIncrementPackageRevision>
     <GenerateTestArtifacts>True</GenerateTestArtifacts>

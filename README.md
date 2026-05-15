@@ -22,14 +22,18 @@ We will then try and fix some basic features.
 
 ## How do I get it?
 
-Currently, this fix of rounded tb is in progress.
-The easiest way to download RoundedTB is from the [Microsoft Store](https://www.microsoft.com/store/productId/9MTFTXSJ9M7F). You can also download the latest version from the Releases tab, unzip it and run `RoundedTB.exe`. If you're a madman, you can compile it yourself or check out the latest [Canary build](https://nightly.link/torchgm/RoundedTB/workflows/ci/master/rtb-artifacts.zip) (note these can be very unfinished, buggy and unstable).
+Grab the latest build from the [Releases](https://github.com/mcc1/RoundedTB/releases) tab. Two options are attached to each release:
+
+- **`RoundedTB-vX.Y.zip`** – portable build. Unzip it and run `RoundedTB.exe`.
+- **`RoundedTB.Package_X.Y.Z.Z_x64.msixbundle`** + **`RoundedTB.cer`** – MSIX install. The bundle is signed with a self-signed certificate, so import `RoundedTB.cer` into `Local Machine \ Trusted People` before double-clicking the bundle. Full steps are in `INSTALL.txt` on the release.
+
+If you'd rather live on the edge, you can compile it yourself using the instructions below.
 
 ## How do I build it?
 
 ### Prerequisites
 
-- .NET 6.0 SDK
+- .NET 10 SDK
 
 ### Building via Command Line
 
@@ -40,10 +44,10 @@ The easiest way to download RoundedTB is from the [Microsoft Store](https://www.
 dotnet build RoundedTB/RoundedTB.csproj -c Release
 ```
 
-3. The executable will be at `RoundedTB/bin/Release/net6.0-windows10.0.19041/RoundedTB.exe` or run
+3. The executable will be at `RoundedTB/bin/Release/net10.0-windows10.0.19041/RoundedTB.exe` or run
 
 ```bash
-.\RoundedTB\bin\Release\net6.0-windows10.0.19041\RoundedTB.exe
+.\RoundedTB\bin\Release\net10.0-windows10.0.19041\RoundedTB.exe
 ```
 
 ### Building via Visual Studio Code

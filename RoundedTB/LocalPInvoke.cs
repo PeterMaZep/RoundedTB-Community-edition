@@ -114,6 +114,9 @@ namespace RoundedTB
         public static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
         public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 
         [DllImport("user32.dll")]
@@ -136,6 +139,9 @@ namespace RoundedTB
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool GetLayeredWindowAttributes(IntPtr hwnd, out uint crKey, out byte bAlpha, out uint dwFlags);
+
+        [DllImport("gdi32.dll")]
+        public static extern bool DeleteObject(IntPtr hObject);
 
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_LAYERED = 0x80000;

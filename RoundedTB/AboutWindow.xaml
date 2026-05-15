@@ -4,10 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:RoundedTB"
-        xmlns:wpfui="clr-namespace:WPFUI.Controls;assembly=WPFUI"
         mc:Ignorable="d"
-        Style="{StaticResource UiWindow}"
-        Background="#20808080"
         Title="RoundedTB - About" Height="616" Width="500"
         Visibility ="Visible" ResizeMode="NoResize" Opacity="1.001">
     <Grid>
@@ -17,10 +14,7 @@
         <Image x:Name="bannerCan" Visibility ="Visible" HorizontalAlignment="Center" Height="146" VerticalAlignment="Top"  Opacity="0.8" Source="res\HeadBannerCan.png" Width="500" Stretch="UniformToFill" Margin="0,-16,0,0"/>
         <Button x:Name="okButton" Content="OK" Margin="0,0,10,10" VerticalAlignment="Bottom" HorizontalAlignment="Right" Width="85" Click="okButton_Click" FontWeight="Normal"/>
         <TextBlock x:Name="titleBlock" HorizontalAlignment="Left" Margin="10,35,0,0" TextWrapping="Wrap" Text="Welcome to RoundedTB!" VerticalAlignment="Top" FontWeight="Normal" FontFamily="Segoe UI Semibold" FontSize="36" Opacity="0.795"/>
-        <TextBlock x:Name="subtitleBlock" HorizontalAlignment="Left" Margin="10,85,0,0" TextWrapping="Wrap" Text="Preview 4B(Canary 4.0.0)" VerticalAlignment="Top" FontWeight="Normal" FontFamily="Segoe UI Semibold" FontSize="22" Opacity="0.795" Height="30"/>
-
-        <wpfui:TitleBar x:Name="aboutTitleBar" Grid.Row="0" NotifyIconTooltip="RoundedTB" ApplicationNavigation="True" Title="RoundedTB - About" Icon="pack://application:,,,/RoundedTBCanary.ico" Height="51" ShowMaximize="False"/>
-
+        <TextBlock x:Name="subtitleBlock" HorizontalAlignment="Left" Margin="10,85,0,0" TextWrapping="Wrap" Text="Community Edition v0.4.1" VerticalAlignment="Top" FontWeight="Normal" FontFamily="Segoe UI Semibold" FontSize="22" Opacity="0.795" Height="30"/>
 
         <TextBlock x:Name="bodyBlockMain" Margin="10,134,10,0" TextWrapping="Wrap" FontWeight="Normal" FontFamily="Segoe UI SemiBold" FontSize="14" Height="37" VerticalAlignment="Top">
             <Bold>Thanks for downloading RoundedTB. Expand the following categories for more information.</Bold>
@@ -31,10 +25,21 @@
                 <Expander x:Name="expander0" HorizontalAlignment="Center" Header="What's new" VerticalAlignment="Top" Width="480" FontSize="16" FontFamily="Segoe UI Semibold">
                     <Grid>
                         <TextBlock Margin="0,5,0,0" x:Name="bodyBlock0" TextWrapping="Wrap" FontWeight="Normal" FontFamily="Segoe UI" FontSize="14" Opacity="0.8" LineHeight="23">
-                    • Nobody knows. Some say secrets lie amongst these builds. And bugs. Honestly, I'm pretty sure they're 90% bug. 95%. 98%. Actually the fact you're even seeing this text is probably a bug. idk tbh, i give up
+                    <Bold>v0.4.0 — Independent autohide per segment.</Bold> In dynamic mode each of AppList / Tray / Widgets / SecondaryClock now has its own Auto-hide setting (Always show / Always hide / Show on desktop). Click a segment in the diagram and pick its autohide value just like you do for corner radius and margins. Segments sharing the same value form a hover group and reveal/hide together; differing values are independent. Existing configs migrate the previous single Auto-hide value to all segments automatically.
                     <LineBreak/>
-                    <Bold>REMINDER: Autohide is currently rather buggy and must be entirely disabled in Windows.</Bold>
-                    <LineBreak/>
+                        </TextBlock>
+                    </Grid>
+                </Expander>
+                <Expander x:Name="expanderEffects" HorizontalAlignment="Center" Header="Adding blur or acrylic" VerticalAlignment="Top" Width="480" FontSize="16" FontFamily="Segoe UI Semibold">
+                    <Grid>
+                        <TextBlock Margin="0,5,0,0" TextWrapping="Wrap" FontWeight="Normal" FontFamily="Segoe UI" FontSize="14" Opacity="0.8" LineHeight="23">
+                    RoundedTB only handles the rounded shape; blur, acrylic and tint colour come from
+                    <Hyperlink NavigateUri="https://apps.microsoft.com/detail/9pf4kz2vn4w9" RequestNavigate="Hyperlink_RequestNavigate">TranslucentTB</Hyperlink>.
+                    Install both apps and they discover each other automatically — RoundedTB tells TranslucentTB to redraw whenever it reshapes the taskbar.
+                    <LineBreak/><LineBreak/>
+                    On Windows 11 (build 22000 and above) blur and acrylic on the taskbar are only reachable through TranslucentTB's XAML-level injection — the older single-API hook that worked on Windows 10 was disabled by Microsoft in modern Explorer builds. RoundedTB cannot replicate that path on its own; if you want acrylic, you want both apps.
+                    <LineBreak/><LineBreak/>
+                    The "TranslucentTB integration" checkbox in settings only fires its "redraw" message while TranslucentTB is actually running, so leaving it on costs nothing when you don't have TranslucentTB installed.
                         </TextBlock>
                     </Grid>
                 </Expander>
@@ -77,8 +82,6 @@
                 <Expander x:Name="expander3" HorizontalAlignment="Center" Header="Known issues" VerticalAlignment="Top" Width="480" FontSize="16" FontFamily="Segoe UI Semibold">
                     <Grid>
                         <TextBlock Margin="0,5,0,0" x:Name="bodyBlock3" TextWrapping="Wrap" FontWeight="Normal" FontFamily="Segoe UI" FontSize="14" Opacity="0.8" LineHeight="23">
-                    • Using RoundedTB with Windows' autohide feature can result in heavy flickering, bugs, an inability to access the taskbar and isn't supported. An upcoming version of RoundedTB will introduce a custom autohide feature that will work correctly.
-                    <LineBreak/>
                     • Dynamic mode and split mode only work correctly when the taskbar is at the top or bottom of the monitor.
                     <LineBreak/>
                     • Split mode on Windows 10 is currently only supported on the primary monitor.
@@ -94,7 +97,7 @@
                     <Grid>
                         <TextBlock Margin="0,5,0,0" x:Name="bodyBlock4" TextWrapping="Wrap" FontWeight="Normal" FontFamily="Segoe UI" FontSize="14" Opacity="0.8" LineHeight="21">
                     • More in-depth instructions, tips and tricks are available in the
-                    <Hyperlink NavigateUri="https://github.com/torchgm/RoundedTB#readme" RequestNavigate="Hyperlink_RequestNavigate">
+                    <Hyperlink NavigateUri="https://github.com/mcc1/RoundedTB#readme" RequestNavigate="Hyperlink_RequestNavigate">
                         README
                     </Hyperlink>.
                     <LineBreak/>
@@ -104,13 +107,13 @@
                     </Hyperlink>.
                     <LineBreak/>
                     • If you want to browse the source code, file an issue or suggest a feature, check out
-                    <Hyperlink NavigateUri="https://github.com/torchgm/RoundedTB" RequestNavigate="Hyperlink_RequestNavigate">
-                        the RoundedTB GitHub repository
+                    <Hyperlink NavigateUri="https://github.com/mcc1/RoundedTB" RequestNavigate="Hyperlink_RequestNavigate">
+                        the RoundedTB Community Edition repository
                     </Hyperlink>.
                     <LineBreak/>
                     <LineBreak/>
                     RoundedTB is licensed under the
-                    <Hyperlink NavigateUri="https://github.com/torchgm/RoundedTB/blob/master/LICENSE" RequestNavigate="Hyperlink_RequestNavigate">
+                    <Hyperlink NavigateUri="https://github.com/mcc1/RoundedTB/blob/master/LICENSE" RequestNavigate="Hyperlink_RequestNavigate">
                         GNU General Public License v3.0
                     </Hyperlink>. By using the software, you agree to accepting the terms of this license.
                     <LineBreak/>

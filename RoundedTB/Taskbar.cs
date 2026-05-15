@@ -10,7 +10,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Newtonsoft.Json;
 using System.Runtime.InteropServices;
-
+using Interop.UIAutomationClient;
 
 
 namespace RoundedTB
@@ -116,14 +116,27 @@ namespace RoundedTB
         /// <returns>
         /// a partial Taskbar containing just rects and handles.
         /// </returns>
-        public static Types.Taskbar GetQuickTaskbarRects(IntPtr taskbarHwnd, IntPtr trayHwnd, IntPtr appListHwnd)
+        public static Types.Taskbar GetQuickTaskbarRects(IntPtr taskbarHwnd, IntPtr trayHwnd, IntPtr appListHwnd, Types.AppListXaml appListXaml)
         {
             LocalPInvoke.GetWindowRect(taskbarHwnd, out LocalPInvoke.RECT taskbarRectCheck);
             LocalPInvoke.GetWindowRect(trayHwnd, out LocalPInvoke.RECT trayRectCheck);
             LocalPInvoke.GetWindowRect(appListHwnd, out LocalPInvoke.RECT appListRectCheck);
 
+            // Prefer the XAML-based AppListXaml detection. On Win11 the legacy MSTaskSwWClass
+            // hwnd may still exist (for accessibility) but its rect doesn't track the real
+            // XAML-rendered app icons - it can be stale or under-report the true bounds.
+            // AppListXaml.GetWindowRect() uses UIA to enumerate TaskbarFrame children with a
+            // filter that excludes Start/Search/Widgets/Tray, giving tighter app-only bounds.
+            // Fall back to legacy rect only when XAML returns null.
+            LocalPInvoke.RECT? xamlRect = appListXaml?.GetWindowRect();
+            if (xamlRect != null && (xamlRect.Value.Right - xamlRect.Value.Left) > 0)
+            {
+                appListRectCheck = xamlRect.Value;
+            }
+
             return new Types.Taskbar()
             {
+                AppListXaml = appListXaml,
                 TaskbarHwnd = taskbarHwnd,
                 TrayHwnd = trayHwnd,
                 AppListHwnd = appListHwnd,
@@ -151,7 +164,7 @@ namespace RoundedTB
                 LocalPInvoke.SetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE, LocalPInvoke.GetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE).ToInt32() ^ LocalPInvoke.WS_EX_TRANSPARENT);
             }
 
-            if (settings.CompositionCompat)
+            if (settings.CompositionCompat && settings.TtbRunning)
             {
                 Interaction.UpdateTranslucentTB(taskbar.TaskbarHwnd);
             }
@@ -165,6 +178,7 @@ namespace RoundedTB
         /// </returns>
         public static bool UpdateSimpleTaskbar(Types.Taskbar taskbar, Types.Settings settings)
         {
+            IntPtr region = IntPtr.Zero;
             try
             {
                 // Create an effective region to be applied to the taskbar
@@ -177,9 +191,9 @@ namespace RoundedTB
                     Height = Convert.ToInt32(taskbar.TaskbarRect.Bottom - taskbar.TaskbarRect.Top - (settings.SimpleTaskbarLayout.MarginBottom * taskbar.ScaleFactor)) + 1
                 };
 
-                IntPtr region = LocalPInvoke.CreateRoundRectRgn(taskbarEffectiveRegion.Left, taskbarEffectiveRegion.Top, taskbarEffectiveRegion.Width, taskbarEffectiveRegion.Height, taskbarEffectiveRegion.CornerRadius, taskbarEffectiveRegion.CornerRadius);
+                region = LocalPInvoke.CreateRoundRectRgn(taskbarEffectiveRegion.Left, taskbarEffectiveRegion.Top, taskbarEffectiveRegion.Width, taskbarEffectiveRegion.Height, taskbarEffectiveRegion.CornerRadius, taskbarEffectiveRegion.CornerRadius);
                 LocalPInvoke.SetWindowRgn(taskbar.TaskbarHwnd, region, true);
-                if (settings.CompositionCompat)
+                if (settings.CompositionCompat && settings.TtbRunning)
                 {
                     Interaction.UpdateTranslucentTB(taskbar.TaskbarHwnd);
                 }
@@ -188,6 +202,10 @@ namespace RoundedTB
             catch (Exception)
             {
                 return false;
+            }
+            finally
+            {
+                LocalPInvoke.DeleteObject(region);
             }
         }
 
@@ -199,10 +217,12 @@ namespace RoundedTB
         /// </returns>
         public static bool UpdateDynamicTaskbar(Types.Taskbar taskbar, Types.Settings settings)
         {
+            IntPtr workingRegion = IntPtr.Zero;
+            IntPtr trayRegion = IntPtr.Zero;
+            IntPtr widgetsRegion = IntPtr.Zero;
+            IntPtr clockRegion = IntPtr.Zero;
             try
             {
-                IntPtr mainRegion;
-                IntPtr workingRegion = LocalPInvoke.CreateRoundRectRgn(1, 1, 1, 1, 0, 0);
                 int centredDistanceFromEdge = 0;
 
                 // Create an effective region to be applied to the taskbar for the applist
@@ -245,8 +265,18 @@ namespace RoundedTB
                     CornerRadius = Convert.ToInt32(settings.DynamicWidgetsLayout.CornerRadius * taskbar.ScaleFactor),
                     Top = Convert.ToInt32(settings.DynamicWidgetsLayout.MarginTop * taskbar.ScaleFactor),
                     Left = Convert.ToInt32(settings.DynamicWidgetsLayout.MarginLeft * taskbar.ScaleFactor),
-                    Width = Convert.ToInt32(168 * taskbar.ScaleFactor - (settings.DynamicWidgetsLayout.MarginRight * taskbar.ScaleFactor)) + 1,
+                    Width = Convert.ToInt32(settings.WidgetsWidth * taskbar.ScaleFactor - (settings.DynamicWidgetsLayout.MarginRight * taskbar.ScaleFactor)) + 1,
                     Height = Convert.ToInt32(taskbar.TaskbarRect.Bottom - taskbar.TaskbarRect.Top - (settings.DynamicWidgetsLayout.MarginBottom * taskbar.ScaleFactor)) + 1
+                };
+
+
+                Types.EffectiveRegion secondaryClockRegion = new Types.EffectiveRegion
+                {
+                    CornerRadius = Convert.ToInt32(settings.DynamicSecondaryClockLayout.CornerRadius * taskbar.ScaleFactor),
+                    Top = Convert.ToInt32(settings.DynamicSecondaryClockLayout.MarginTop * taskbar.ScaleFactor),
+                    Left = (taskbar.TaskbarRect.Right - taskbar.TaskbarRect.Left) - settings.ClockWidth - Convert.ToInt32(settings.DynamicSecondaryClockLayout.MarginLeft * taskbar.ScaleFactor),
+                    Width = Convert.ToInt32(settings.ClockWidth * taskbar.ScaleFactor - (settings.DynamicSecondaryClockLayout.MarginRight * taskbar.ScaleFactor)) + 1,
+                    Height = Convert.ToInt32(taskbar.TaskbarRect.Bottom - taskbar.TaskbarRect.Top - (settings.DynamicSecondaryClockLayout.MarginBottom * taskbar.ScaleFactor)) + 1
                 };
 
                 centredDistanceFromEdge = taskbar.TaskbarRect.Right - taskbar.AppListRect.Right - Convert.ToInt32(2 * taskbar.ScaleFactor);
@@ -260,6 +290,20 @@ namespace RoundedTB
                     centredDistanceFromEdge -= Convert.ToInt32(20 * taskbar.ScaleFactor);
                 }
 
+                // Per-segment dynamic-mode autohide: the background worker maintains
+                // DynAppListVisible / DynTrayVisible / DynWidgetsVisible / DynClockVisible
+                // and forces a region rebuild whenever any of them flip. When a segment is
+                // hidden we just skip its contribution to the working region; the cursor
+                // then passes straight through (the taskbar window already has alpha=255
+                // and no WS_EX_TRANSPARENT flag, so click-through requires the region to
+                // actually omit the pixels). If AppList itself is hidden, seed the region
+                // empty so the other segments — if any — still composite correctly on top.
+                if (!taskbar.DynAppListVisible)
+                {
+                    workingRegion = LocalPInvoke.CreateRectRgn(0, 0, 0, 0);
+                }
+                else
+
                 // Create region for if the taskbar is centred by take the right-to-right distance (centredDistanceFromEdge) off from both sides, as well as the margin
                 if (settings.IsCentred)
                 {
@@ -269,14 +313,22 @@ namespace RoundedTB
                     int leftMargin = Convert.ToInt32(settings.DynamicAppListLayout.MarginLeft * taskbar.ScaleFactor);
                     int rightMargin = Convert.ToInt32(settings.DynamicAppListLayout.MarginRight * taskbar.ScaleFactor);
 
-                    int left = Math.Max(0, appListLeft - leftMargin - Convert.ToInt32(50 * taskbar.ScaleFactor));
-                    int right = Math.Min(taskbar.TaskbarRect.Right - taskbar.TaskbarRect.Left, appListRight + rightMargin + Convert.ToInt32(50 * taskbar.ScaleFactor));
+                    // No hardcoded buffer: the old +50px (scaled to 100px on 4K!) was a band-aid
+                    // for the inaccurate legacy MSTaskSwWClass rect. With AppListXaml giving
+                    // accurate bounds, any extra padding comes entirely from the user's margins.
+                    // Overlapping with Search on the left was caused by the buffer eating into
+                    // the SearchButton (which on some setups is 275px+ wide).
+                    int left = Math.Max(0, appListLeft - leftMargin);
+                    int right = Math.Min(taskbar.TaskbarRect.Right - taskbar.TaskbarRect.Left, appListRight + rightMargin);
 
                     int top = centredEffectiveRegion.Top;
-                    int bottom = top + centredEffectiveRegion.Height;
+                    // Height field stores the BOTTOM coordinate (taskbarHeight - marginBottom),
+                    // despite being named Height. The previous "top + Height" calc double-added the
+                    // top offset, making the region extend past the taskbar bottom.
+                    int bottom = centredEffectiveRegion.Height;
                     int radius = centredEffectiveRegion.CornerRadius;
 
-                    mainRegion = LocalPInvoke.CreateRoundRectRgn(
+                    workingRegion = LocalPInvoke.CreateRoundRectRgn(
                         left,
                         top,
                         right,
@@ -289,7 +341,7 @@ namespace RoundedTB
                 else
                 {
 
-                    mainRegion = LocalPInvoke.CreateRoundRectRgn(
+                    workingRegion = LocalPInvoke.CreateRoundRectRgn(
                         taskbarEffectiveRegion.Left,
                         taskbarEffectiveRegion.Top,
                         taskbarEffectiveRegion.Width - centredDistanceFromEdge,
@@ -299,10 +351,23 @@ namespace RoundedTB
                         );
                 }
 
-                // If the user has it enabled and the tray handle isn't null, create a region for the system tray and merge it with the taskbar region
-                if (settings.ShowTray && taskbar.TrayHwnd != IntPtr.Zero)
+                if (settings.ShowSecondaryClock && taskbar.IsSecondary && taskbar.DynClockVisible)
                 {
-                    IntPtr trayRegion = LocalPInvoke.CreateRoundRectRgn(
+                    clockRegion = LocalPInvoke.CreateRoundRectRgn(
+                        secondaryClockRegion.Left,
+                        secondaryClockRegion.Top,
+                        secondaryClockRegion.Width + secondaryClockRegion.Left,
+                        secondaryClockRegion.Height,
+                        secondaryClockRegion.CornerRadius,
+                        secondaryClockRegion.CornerRadius
+                        );
+                    LocalPInvoke.CombineRgn(workingRegion, clockRegion, workingRegion, 2);
+                }
+
+                // If the user has it enabled and the tray handle isn't null, create a region for the system tray and merge it with the taskbar region
+                if (settings.ShowTray && taskbar.TrayHwnd != IntPtr.Zero && taskbar.DynTrayVisible)
+                {
+                    trayRegion = LocalPInvoke.CreateRoundRectRgn(
                         (taskbar.TrayRect.Left - taskbar.TaskbarRect.Left) - trayEffectiveRegion.Left,
                         trayEffectiveRegion.Top,
                         trayEffectiveRegion.Width,
@@ -311,13 +376,12 @@ namespace RoundedTB
                         trayEffectiveRegion.CornerRadius
                         );
 
-                    LocalPInvoke.CombineRgn(workingRegion, trayRegion, mainRegion, 2);
-                    mainRegion = workingRegion;
+                    LocalPInvoke.CombineRgn(workingRegion, trayRegion, workingRegion, 2);
                 }
 
-                if (settings.ShowWidgets)
+                if (settings.ShowWidgets && taskbar.DynWidgetsVisible)
                 {
-                    IntPtr widgetsRegion = LocalPInvoke.CreateRoundRectRgn(
+                    widgetsRegion = LocalPInvoke.CreateRoundRectRgn(
                         widgetsEffectiveRegion.Left,
                         widgetsEffectiveRegion.Top,
                         widgetsEffectiveRegion.Width,
@@ -325,14 +389,13 @@ namespace RoundedTB
                         widgetsEffectiveRegion.CornerRadius,
                         widgetsEffectiveRegion.CornerRadius
                         );
-
-                    LocalPInvoke.CombineRgn(workingRegion, widgetsRegion, mainRegion, 2);
-                    mainRegion = workingRegion;
+                    LocalPInvoke.CombineRgn(workingRegion, widgetsRegion, workingRegion, 2);
                 }
 
+
                 // Apply the final region to the taskbar
-                LocalPInvoke.SetWindowRgn(taskbar.TaskbarHwnd, mainRegion, true);
-                if (settings.CompositionCompat)
+                LocalPInvoke.SetWindowRgn(taskbar.TaskbarHwnd, workingRegion, true);
+                if (settings.CompositionCompat && settings.TtbRunning)
                 {
                     Interaction.UpdateTranslucentTB(taskbar.TaskbarHwnd);
                 }
@@ -342,6 +405,13 @@ namespace RoundedTB
             catch (Exception)
             {
                 return false;
+            }
+            finally
+            {
+                LocalPInvoke.DeleteObject(clockRegion);
+                LocalPInvoke.DeleteObject(widgetsRegion);
+                LocalPInvoke.DeleteObject(trayRegion);
+                LocalPInvoke.DeleteObject(workingRegion);
             }
 
         }
@@ -440,13 +510,21 @@ namespace RoundedTB
             return true;
         }
 
+
+        /// <summary>Get AppList handle for win23h2 and later. </summary>
+        public static Types.AppListXaml GetAppListSince23H2(IntPtr hwndTaskbarMain)
+        {
+            return new Types.AppListXaml(hwndTaskbarMain);
+        }
+
+
         /// <summary>
         /// Collects information on any currently-present taskbars.
         /// </summary>
         /// <returns>
         /// A list of taskbars populated with information about their size, handles etc.
         /// </returns>
-        public static List<Types.Taskbar> GenerateTaskbarInfo()
+        public static List<Types.Taskbar> GenerateTaskbarInfo(bool isWindows11)
         {
             List<Types.Taskbar> retVal = new List<Types.Taskbar>();
 
@@ -457,9 +535,11 @@ namespace RoundedTB
             LocalPInvoke.GetWindowRect(hwndTray, out LocalPInvoke.RECT rectTray); // Get the RECT for the main taskbar's tray
             IntPtr hwndAppList = LocalPInvoke.FindWindowExA(LocalPInvoke.FindWindowExA(hwndMain, IntPtr.Zero, "ReBarWindow32", null), IntPtr.Zero, "MSTaskSwWClass", null); // Get the handle to the main taskbar's app list
             LocalPInvoke.GetWindowRect(hwndAppList, out LocalPInvoke.RECT rectAppList);// Get the RECT for the main taskbar's app list
+            Types.AppListXaml appList = GetAppListSince23H2(hwndMain);
 
             retVal.Add(new Types.Taskbar
             {
+                AppListXaml = appList,
                 TaskbarHwnd = hwndMain,
                 TrayHwnd = hwndTray,
                 AppListHwnd = hwndAppList,
@@ -469,7 +549,8 @@ namespace RoundedTB
                 RecoveryHrgn = hrgnMain,
                 ScaleFactor = Convert.ToDouble(LocalPInvoke.GetDpiForWindow(hwndMain)) / 96.00,
                 TaskbarRes = $"{rectMain.Right - rectMain.Left} x {rectMain.Bottom - rectMain.Top}",
-                Ignored = false
+                Ignored = false,
+                IsSecondary = false,
             });
             int style = LocalPInvoke.GetWindowLong(hwndMain, LocalPInvoke.GWL_EXSTYLE).ToInt32();
             if ((style & LocalPInvoke.WS_EX_LAYERED) != LocalPInvoke.WS_EX_LAYERED)
@@ -496,9 +577,8 @@ namespace RoundedTB
                 {
                     LocalPInvoke.GetWindowRect(hwndCurrent, out LocalPInvoke.RECT rectCurrent);
                     LocalPInvoke.GetWindowRgn(hwndCurrent, out IntPtr hrgnCurrent);
-                    Interaction interaction = new Interaction();
                     IntPtr hwndSecTray = IntPtr.Zero;
-                    if (interaction.IsWindows11())
+                    if (isWindows11)
                     {
                         IntPtr imd = LocalPInvoke.FindWindowExA(hwndCurrent, IntPtr.Zero, "Windows.UI.Composition.DesktopWindowContentBridge", null);
                         hwndSecTray = LocalPInvoke.FindWindowExA(hwndCurrent, imd, "Windows.UI.Composition.DesktopWindowContentBridge", null);
@@ -508,10 +588,23 @@ namespace RoundedTB
                         hwndSecTray = LocalPInvoke.FindWindowExA(hwndCurrent, IntPtr.Zero, "TrayNotifyWnd", null); // Get handle to this secondary taskbar's tray
                     }
                     LocalPInvoke.GetWindowRect(hwndTray, out LocalPInvoke.RECT rectSecTray); // Get the RECT for this secondary taskbar's tray
-                    IntPtr hwndSecAppList = LocalPInvoke.FindWindowExA(LocalPInvoke.FindWindowExA(hwndCurrent, IntPtr.Zero, "WorkerW", null), IntPtr.Zero, "MSTaskListWClass", null); // Get the handle to the main taskbar's app list
+                    IntPtr hwndWorkerW = LocalPInvoke.FindWindowExA(hwndCurrent, IntPtr.Zero, "WorkerW", null);
+                    IntPtr hwndSecAppList = IntPtr.Zero;
+                    // windows 11 22H2 has multiple WorkerW handles.
+                    while (hwndWorkerW != IntPtr.Zero)
+                    {
+                        hwndSecAppList = LocalPInvoke.FindWindowExA(hwndWorkerW, IntPtr.Zero, "MSTaskListWClass", null); // Get the handle to the main taskbar's app list
+                        if (hwndSecAppList != IntPtr.Zero)
+                        {
+                            break;
+                        }
+                        hwndWorkerW = LocalPInvoke.FindWindowExA(hwndCurrent, hwndWorkerW, "WorkerW", null);
+                    }
                     LocalPInvoke.GetWindowRect(hwndSecAppList, out LocalPInvoke.RECT rectSecAppList);// Get the RECT for this secondary taskbar's app list
+                    Types.AppListXaml appListSec = GetAppListSince23H2(hwndCurrent);
                     retVal.Add(new Types.Taskbar
                     {
+                        AppListXaml = appListSec,
                         TaskbarHwnd = hwndCurrent,
                         TrayHwnd = hwndSecTray,
                         AppListHwnd = hwndSecAppList,
@@ -521,7 +614,8 @@ namespace RoundedTB
                         RecoveryHrgn = hrgnCurrent,
                         ScaleFactor = Convert.ToDouble(LocalPInvoke.GetDpiForWindow(hwndCurrent)) / 96.00,
                         TaskbarRes = $"{rectCurrent.Right - rectCurrent.Left} x {rectCurrent.Bottom - rectCurrent.Top}",
-                        Ignored = false
+                        Ignored = false,
+                        IsSecondary = true,
                     });
                     style = LocalPInvoke.GetWindowLong(hwndCurrent, LocalPInvoke.GWL_EXSTYLE).ToInt32();
                     if ((style & LocalPInvoke.WS_EX_LAYERED) != LocalPInvoke.WS_EX_LAYERED)

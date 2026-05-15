@@ -1,0 +1,156 @@
+name: build-msix
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_build:
+        description: 'Build with RTB_RELEASE=true (official icon + branding). Auto-true on release events.'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+# Resolved once and reused everywhere so the wapproj, the explicit portable
+# build, and the path-detection in the staging step all agree. Release events
+# always force it on; workflow_dispatch lets the operator pick (default true
+# so manual backfills match what releases ship).
+env:
+  RTB_RELEASE: ${{ github.event_name == 'release' || inputs.release_build == true }}
+
+jobs:
+  build-msix:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v3
+
+    - name: Setup .NET 10
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore
+      run: msbuild RoundedTB.sln /t:Restore /p:Configuration=Release /p:Platform=x64 /p:TargetPlatformVersion=10.0.26100.0 /p:RTB_RELEASE=${{ env.RTB_RELEASE }}
+
+    - name: Decode signing certificate
+      shell: pwsh
+      run: |
+        $pfxBytes = [Convert]::FromBase64String("${{ secrets.PFX_BASE64 }}")
+        [IO.File]::WriteAllBytes("RoundedTB.pfx", $pfxBytes)
+
+    - name: Build MSIX bundle
+      shell: pwsh
+      run: |
+        msbuild PackagingProject\RoundedTB.Package.wapproj `
+          /p:Configuration=Release `
+          /p:Platform=x64 `
+          /p:AppxBundle=Always `
+          /p:AppxBundlePlatforms=x64 `
+          /p:UapAppxPackageBuildMode=SideloadOnly `
+          /p:AppxPackageSigningEnabled=True `
+          /p:TargetPlatformVersion=10.0.26100.0 `
+          /p:RTB_RELEASE=${{ env.RTB_RELEASE }} `
+          /p:PackageCertificateKeyFile="$((Resolve-Path RoundedTB.pfx).Path)" `
+          /p:PackageCertificatePassword="${{ secrets.PFX_PASSWORD }}"
+
+    # The wapproj packaging path leaves three copies of the payload in
+    # RoundedTB\bin\<config>\<tfm>\: the AnyCPU root output, plus per-RID
+    # win-x64\ and win-x64\msixpublish\ subfolders for MSIX consumption.
+    # Zipping the whole folder ballooned v0.4.1's portable archive to 186 MB
+    # against an expected ~16 MB. Use dotnet publish into its own clean output
+    # directory so we get only the deployable subset (no msixpublish leftover,
+    # no per-RID runtime spread). It's still incremental against the wapproj
+    # build because the project compile result is cached.
+    - name: Build portable RoundedTB
+      run: dotnet publish RoundedTB\RoundedTB.csproj -c Release -p:RTB_RELEASE=${{ env.RTB_RELEASE }} -o RoundedTB\bin\portable
+
+    - name: Locate output bundle
+      id: find-msix
+      shell: pwsh
+      run: |
+        $bundle = Get-ChildItem -Path PackagingProject\AppPackages -Recurse -Filter "*.msixbundle" | Select-Object -First 1
+        if (-not $bundle) { $bundle = Get-ChildItem -Path PackagingProject\AppPackages -Recurse -Filter "*.appxbundle" | Select-Object -First 1 }
+        if (-not $bundle) { throw "No bundle produced" }
+        echo "path=$($bundle.FullName)" >> $env:GITHUB_OUTPUT
+        echo "name=$($bundle.Name)" >> $env:GITHUB_OUTPUT
+        Write-Host "Found: $($bundle.FullName)"
+
+    - name: Export public certificate for end users
+      shell: pwsh
+      run: |
+        $pwd = ConvertTo-SecureString "${{ secrets.PFX_PASSWORD }}" -Force -AsPlainText
+        $cert = Get-PfxCertificate -FilePath RoundedTB.pfx -Password $pwd
+        Export-Certificate -Cert $cert -FilePath RoundedTB.cer | Out-Null
+
+    - name: Stage release files
+      id: stage
+      shell: pwsh
+      run: |
+        $stage = Join-Path $env:RUNNER_TEMP "release"
+        New-Item -ItemType Directory -Force -Path $stage | Out-Null
+        Copy-Item "${{ steps.find-msix.outputs.path }}" $stage
+        Copy-Item "RoundedTB.cer" $stage
+
+        # Portable zip: the dedicated dotnet publish output directory. Same
+        # path regardless of RTB_RELEASE because we hand publish an explicit
+        # -o, bypassing the conditional OutputPath redirect in the csproj.
+        # Tag drives the filename so it matches the README convention
+        # RoundedTB-vX.Y.zip; workflow_dispatch runs (no tag) fall back to
+        # "dev" so the artifact upload still succeeds.
+        $portableSrc = "RoundedTB\bin\portable"
+        if (-not (Test-Path $portableSrc))
+        {
+            throw "Portable build output not found at $portableSrc — did the 'Build portable RoundedTB' step succeed?"
+        }
+        $tag = "${{ github.event.release.tag_name }}"
+        if (-not $tag) { $tag = "dev" }
+        $zipPath = Join-Path $stage "RoundedTB-$tag.zip"
+        Compress-Archive -Path "$portableSrc\*" -DestinationPath $zipPath -Force
+        $install = @'
+        RoundedTB MSIX - Installation Guide
+        ====================================
+
+        This build is signed with a self-signed certificate, so Windows
+        will refuse to install the .msixbundle until you trust the
+        certificate (RoundedTB.cer). You only need to do this once.
+
+        --- Option A: GUI ---
+        1. Right-click RoundedTB.cer -> Install Certificate.
+        2. Store Location: Local Machine (requires admin). Click Next.
+        3. Choose "Place all certificates in the following store",
+           click Browse, pick "Trusted People", then Next -> Finish.
+        4. Double-click RoundedTB.Package_*.msixbundle to install.
+
+        --- Option B: PowerShell (run as Administrator) ---
+          Import-Certificate -FilePath .\RoundedTB.cer `
+            -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+          Add-AppxPackage .\RoundedTB.Package_2.0.4.1_x64.msixbundle
+
+        --- Uninstall ---
+        Settings -> Apps -> Installed apps -> RoundedTB -> Uninstall.
+        To remove the trust:
+          Get-ChildItem Cert:\LocalMachine\TrustedPeople `
+            | Where-Object Subject -eq "CN=ChihChung Ma" `
+            | Remove-Item
+        '@
+        Set-Content -Path (Join-Path $stage "INSTALL.txt") -Value $install -Encoding UTF8
+        echo "dir=$stage" >> $env:GITHUB_OUTPUT
+
+    - name: Upload MSIX artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: RoundedTB-MSIX
+        path: ${{ steps.stage.outputs.dir }}/*
+
+    - name: Attach MSIX to release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v3
+      with:
+        files: ${{ steps.stage.outputs.dir }}/*

@@ -9,8 +9,8 @@
 
   <Identity
     Name="14082CryzenTechnologies.RoundedTB"
-    Publisher="CN=26093D81-5B64-4610-8EFB-00B295E6FE81"
-    Version="1.3.1.0" />
+    Publisher="CN=ChihChung Ma"
+    Version="2.0.4.1" />
 
   <Properties>
     <DisplayName>RoundedTB</DisplayName>

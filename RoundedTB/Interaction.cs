@@ -41,7 +41,6 @@ namespace RoundedTB
                 return _mw;
             }
         }
-        string m = "";
 
         public Interaction()
         {
@@ -57,6 +56,32 @@ namespace RoundedTB
         {
             string jsonSettings = File.ReadAllText(mw.configPath);
             Types.Settings settings = JsonConvert.DeserializeObject<Types.Settings>(jsonSettings);
+            // compatible old settings
+            if (settings.DynamicSecondaryClockLayout == null)
+            {
+                settings.DynamicSecondaryClockLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 };
+            }
+
+            // Migrate the legacy single Settings.AutoHide into each segment's own AutoHide.
+            // Older configs only carried one autohide value covering the whole taskbar; if
+            // the per-segment fields are still defaulted (all 0) and the legacy value is
+            // non-zero, copy it into every segment so the user keeps the same behaviour.
+            // The legacy field is then zeroed so subsequent applies don't keep overriding.
+            if (settings.AutoHide > 0
+                && settings.SimpleTaskbarLayout != null && settings.SimpleTaskbarLayout.AutoHide == 0
+                && settings.DynamicAppListLayout != null && settings.DynamicAppListLayout.AutoHide == 0
+                && settings.DynamicTrayLayout != null && settings.DynamicTrayLayout.AutoHide == 0
+                && settings.DynamicWidgetsLayout != null && settings.DynamicWidgetsLayout.AutoHide == 0
+                && settings.DynamicSecondaryClockLayout != null && settings.DynamicSecondaryClockLayout.AutoHide == 0)
+            {
+                int legacy = settings.AutoHide;
+                settings.SimpleTaskbarLayout.AutoHide = legacy;
+                settings.DynamicAppListLayout.AutoHide = legacy;
+                settings.DynamicTrayLayout.AutoHide = legacy;
+                settings.DynamicWidgetsLayout.AutoHide = legacy;
+                settings.DynamicSecondaryClockLayout.AutoHide = legacy;
+                settings.AutoHide = 0;
+            }
             return settings;
         }
 
@@ -72,13 +97,11 @@ namespace RoundedTB
 
         public void WriteJSON()
         {
-            File.Create(mw.configPath).Close();
             File.WriteAllText(mw.configPath, JsonConvert.SerializeObject(mw.activeSettings, Formatting.Indented));
         }
 
         public void FileSystem()
         {
-            File.Create(mw.logPath).Close();
             if (!File.Exists(mw.configPath))
             {
                 if (mw.isWindows11)
@@ -89,6 +112,9 @@ namespace RoundedTB
                         DynamicAppListLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
                         DynamicTrayLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
                         DynamicWidgetsLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
+                        DynamicSecondaryClockLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
+                        WidgetsWidth = 168,
+                        ClockWidth = 110,
                         IsDynamic = false,
                         IsCentred = false,
                         IsWindows11 = true,
@@ -98,7 +124,9 @@ namespace RoundedTB
                         FillOnMaximise = true,
                         FillOnTaskSwitch = true,
                         ShowSegmentsOnHover = false,
-                        AutoHide = 0
+                        AutoHide = 0,
+                        HoverRevealDelayMs = 1000,
+                        HoverHideDelayMs = 0
                     };
                 }
                 else
@@ -109,6 +137,9 @@ namespace RoundedTB
                         DynamicAppListLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
                         DynamicTrayLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
                         DynamicWidgetsLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
+                        DynamicSecondaryClockLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
+                        WidgetsWidth = 168,
+                        ClockWidth = 110,
                         IsDynamic = false,
                         IsCentred = false,
                         IsWindows11 = false,
@@ -118,7 +149,9 @@ namespace RoundedTB
                         FillOnMaximise = true,
                         FillOnTaskSwitch = false,
                         ShowSegmentsOnHover = false,
-                        AutoHide = 0
+                        AutoHide = 0,
+                        HoverRevealDelayMs = 1000,
+                        HoverHideDelayMs = 0
                     };
                 }
 
@@ -133,6 +166,9 @@ namespace RoundedTB
 
         public static bool SetWorkspace(LocalPInvoke.RECT rect)
         {
+            Serilog.Log.Information(
+                "SetWorkspace called: L={Left} T={Top} R={Right} B={Bottom}",
+                rect.Left, rect.Top, rect.Right, rect.Bottom);
             bool result = LocalPInvoke.SystemParametersInfo(LocalPInvoke.SPI_SETWORKAREA, 0, ref rect, LocalPInvoke.SPIF_change);
             if (!result)
             {
@@ -141,12 +177,6 @@ namespace RoundedTB
             }
 
             return result;
-        }
-
-        public void AddLog(string message)
-        {
-            //m = $"[{DateTime.Now}] {message}\n";
-            //File.AppendAllText(mw.logPath, m);
         }
 
         public static bool IsTranslucentTBRunning()
@@ -200,7 +230,7 @@ namespace RoundedTB
                 return true; // Return true to indicate the value is odd.
             }
             return null; // Finally, return null to indicate that the provided number is neither odd nor even - not currently required, added for future-proofing in the event the concept of mathematics changes significantly enough to warrant it.
-        // (this is a joke to annoy sylly)
+                         // (this is a joke to annoy sylly)
         }
 
         public IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
