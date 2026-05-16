@@ -14,11 +14,11 @@ We are examining RTB's code to try and fix it. We will gladly take any pull requ
 
 ### Now
 
-We are examining RTB's code to try and fix it. Any pull requests will be gladly reviewed by us.
+We are currently working on a fix
 
 ### The future
 
-We will then try and fix some basic features.
+We will publish our first working preview soon. 
 
 ## How do I get it?
 
