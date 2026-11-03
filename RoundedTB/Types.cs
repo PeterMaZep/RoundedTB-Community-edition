@@ -135,7 +135,7 @@ namespace RoundedTB
                 "WidgetsButton", "WidgetsIcon", "WidgetsButtonMini",
                 "CopilotIcon", "CopilotButton",
                 "ChatButton",
-                "NotifyIconViewer", "SystemTrayIcon", "ClockButton", "MeetNowButton",
+                "NotifyIconViewer", "SystemTrayIcon", "NotifyItemIcon", "ClockButton", "MeetNowButton",
                 "NotificationCenterButton", "ControlCenterButton",
                 "TrayButton", "SystemTrayFrame",
             };
@@ -173,7 +173,12 @@ namespace RoundedTB
                         // Skip non-app elements (Start, Search, Widgets, Tray, Clock, etc.)
                         string? automationId = null;
                         try { automationId = child.CurrentAutomationId; } catch { }
-                        if (automationId != null && NonAppListAutomationIds.Contains(automationId))
+                        // Newer Win11 builds (26220+) host the tray inside TaskbarFrame too, with
+                        // per-icon ids like "NotifyItemIcon"; catch any SystemTray.* class as well.
+                        string? className = null;
+                        try { className = child.CurrentClassName; } catch { }
+                        if ((automationId != null && NonAppListAutomationIds.Contains(automationId))
+                            || (className != null && className.StartsWith("SystemTray.", StringComparison.Ordinal)))
                         {
                             Marshal.ReleaseComObject(child);
                             child = null;
