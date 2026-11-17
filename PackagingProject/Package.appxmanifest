@@ -8,9 +8,9 @@
   IgnorableNamespaces="uap rescap">
 
   <Identity
-    Name="14082CryzenTechnologies.RoundedTB"
-    Publisher="CN=ChihChung Ma"
-    Version="2.0.4.2" />
+    Name="Community.RoundedTBCommunityEdition"
+    Publisher="CN=PeterMaZep"
+    Version="2.1.3.910" />
 
   <Properties>
     <DisplayName>RoundedTB</DisplayName>
