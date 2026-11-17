@@ -42,11 +42,14 @@ jobs:
       uses: actions/setup-dotnet@v5
       with:
         dotnet-version: '10.0.x'
-
+        
     - name: Stamp version from tag
       if: env.RTB_TAG != ''
       shell: pwsh
-      run: .github\scripts\Set-ReleaseVersion.ps1 -Tag $env:RTB_TAG
+      run: |
+        $version = $env:RTB_TAG.TrimStart('v')
+        if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') { $version = "$version.0" }
+        .github\scripts\stamp.ps1 -Version $version -Label $version
 
     - name: Restore
       run: msbuild RoundedTB.sln /t:Restore /p:Configuration=Release /p:Platform=x64 /p:TargetPlatformVersion=10.0.26100.0 /p:RTB_RELEASE=${{ env.RTB_RELEASE }}
