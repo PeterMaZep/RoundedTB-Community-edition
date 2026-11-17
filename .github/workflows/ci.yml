@@ -1,36 +1,33 @@
-name: release
+name: build
 
+# Every branch push gets a Canary build. Tag pushes are skipped: the release
+# itself is built by build-msix, so building the tag here only duplicated the
+# master run.
 on:
   push:
+    branches: ['**']
+  workflow_dispatch:
 
 jobs:
   build:
     name: build-windows
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
     - name: Checkout
       uses: actions/checkout@v6
+
+    - name: Setup .NET 10
+      uses: actions/setup-dotnet@v5
       with:
-          submodules: recursive
+        dotnet-version: '10.0.x'
 
-    - name: Set up MSBuild
-      uses: microsoft/setup-msbuild@v3
-      
-    - name: NuGet Restore
-      run: |
-        cd ${{ github.workspace }}
-        nuget restore RoundedTB.sln
-      
-    - name: Build
-      run: |
-        cd ${{ github.workspace }}
-        msbuild "-property:Configuration=Release" -t:RoundedTB
+    # Same publish command as build-msix's portable zip (minus RTB_RELEASE), so
+    # a green run here means the release build compiles too.
+    - name: Build portable RoundedTB
+      shell: pwsh
+      run: dotnet publish RoundedTB\RoundedTB.csproj -c Release -o "RoundedTB\bin\RoundedTB-$(git rev-parse --short HEAD)"
 
-    - name: Add commit hash to output folder
-      run: |
-        Rename-Item -Path ".\RoundedTB\bin\Release" -NewName "RoundedTB-$(git rev-parse --short ${{ github.sha }})"
-        
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
       with:

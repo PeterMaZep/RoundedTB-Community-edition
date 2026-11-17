@@ -9,6 +9,10 @@ on:
         description: 'Build with RTB_RELEASE=true (official icon + branding). Auto-true on release events.'
         type: boolean
         default: true
+      tag:
+        description: 'Version to stamp, e.g. v2.1.0 (v2.1.0 or later). Leave empty to build with the version already in the repo.'
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -19,6 +23,9 @@ permissions:
 # so manual backfills match what releases ship).
 env:
   RTB_RELEASE: ${{ github.event_name == 'release' || inputs.release_build == true }}
+  # The release tag drives the version: Set-ReleaseVersion.ps1 stamps it into
+  # the manifest and About window, so releases need no version-bump commit.
+  RTB_TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
   build-msix:
@@ -36,17 +43,28 @@ jobs:
       with:
         dotnet-version: '10.0.x'
 
+    - name: Stamp version from tag
+      if: env.RTB_TAG != ''
+      shell: pwsh
+      run: .github\scripts\Set-ReleaseVersion.ps1 -Tag $env:RTB_TAG
+
     - name: Restore
       run: msbuild RoundedTB.sln /t:Restore /p:Configuration=Release /p:Platform=x64 /p:TargetPlatformVersion=10.0.26100.0 /p:RTB_RELEASE=${{ env.RTB_RELEASE }}
 
+    # Secrets reach the scripts through env rather than ${{ }} splicing, so
+    # they are never pasted into the generated script text.
     - name: Decode signing certificate
       shell: pwsh
+      env:
+        PFX_BASE64: ${{ secrets.PFX_BASE64 }}
       run: |
-        $pfxBytes = [Convert]::FromBase64String("${{ secrets.PFX_BASE64 }}")
+        $pfxBytes = [Convert]::FromBase64String($env:PFX_BASE64)
         [IO.File]::WriteAllBytes("RoundedTB.pfx", $pfxBytes)
 
     - name: Build MSIX bundle
       shell: pwsh
+      env:
+        PFX_PASSWORD: ${{ secrets.PFX_PASSWORD }}
       run: |
         msbuild PackagingProject\RoundedTB.Package.wapproj `
           /p:Configuration=Release `
@@ -58,7 +76,7 @@ jobs:
           /p:TargetPlatformVersion=10.0.26100.0 `
           /p:RTB_RELEASE=${{ env.RTB_RELEASE }} `
           /p:PackageCertificateKeyFile="$((Resolve-Path RoundedTB.pfx).Path)" `
-          /p:PackageCertificatePassword="${{ secrets.PFX_PASSWORD }}"
+          /p:PackageCertificatePassword="$env:PFX_PASSWORD"
 
     # The wapproj packaging path leaves three copies of the payload in
     # RoundedTB\bin\<config>\<tfm>\: the AnyCPU root output, plus per-RID
@@ -84,8 +102,10 @@ jobs:
 
     - name: Export public certificate for end users
       shell: pwsh
+      env:
+        PFX_PASSWORD: ${{ secrets.PFX_PASSWORD }}
       run: |
-        $pwd = ConvertTo-SecureString "${{ secrets.PFX_PASSWORD }}" -Force -AsPlainText
+        $pwd = ConvertTo-SecureString $env:PFX_PASSWORD -Force -AsPlainText
         $cert = Get-PfxCertificate -FilePath RoundedTB.pfx -Password $pwd
         Export-Certificate -Cert $cert -FilePath RoundedTB.cer | Out-Null
 
@@ -109,7 +129,7 @@ jobs:
         {
             throw "Portable build output not found at $portableSrc — did the 'Build portable RoundedTB' step succeed?"
         }
-        $tag = "${{ github.event.release.tag_name }}"
+        $tag = $env:RTB_TAG
         if (-not $tag) { $tag = "dev" }
         $zipPath = Join-Path $stage "RoundedTB-$tag.zip"
         Compress-Archive -Path "$portableSrc\*" -DestinationPath $zipPath -Force
@@ -131,7 +151,7 @@ jobs:
         --- Option B: PowerShell (run as Administrator) ---
           Import-Certificate -FilePath .\RoundedTB.cer `
             -CertStoreLocation Cert:\LocalMachine\TrustedPeople
-          Add-AppxPackage .\RoundedTB.Package_2.0.4.1_x64.msixbundle
+          Add-AppxPackage .\__BUNDLE__
 
         --- Uninstall ---
         Settings -> Apps -> Installed apps -> RoundedTB -> Uninstall.
@@ -140,6 +160,7 @@ jobs:
             | Where-Object Subject -eq "CN=ChihChung Ma" `
             | Remove-Item
         '@
+        $install = $install.Replace('__BUNDLE__', "${{ steps.find-msix.outputs.name }}")
         Set-Content -Path (Join-Path $stage "INSTALL.txt") -Value $install -Encoding UTF8
         echo "dir=$stage" >> $env:GITHUB_OUTPUT
 

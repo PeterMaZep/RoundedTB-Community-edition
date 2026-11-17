@@ -14,7 +14,7 @@
         <Image x:Name="bannerCan" Visibility ="Visible" HorizontalAlignment="Center" Height="146" VerticalAlignment="Top"  Opacity="0.8" Source="res\HeadBannerCan.png" Width="500" Stretch="UniformToFill" Margin="0,-16,0,0"/>
         <Button x:Name="okButton" Content="OK" Margin="0,0,10,10" VerticalAlignment="Bottom" HorizontalAlignment="Right" Width="85" Click="okButton_Click" FontWeight="Normal"/>
         <TextBlock x:Name="titleBlock" HorizontalAlignment="Left" Margin="10,35,0,0" TextWrapping="Wrap" Text="Welcome to RoundedTB!" VerticalAlignment="Top" FontWeight="Normal" FontFamily="Segoe UI Semibold" FontSize="36" Opacity="0.795"/>
-        <TextBlock x:Name="subtitleBlock" HorizontalAlignment="Left" Margin="10,85,0,0" TextWrapping="Wrap" Text="Community Edition v0.4.1" VerticalAlignment="Top" FontWeight="Normal" FontFamily="Segoe UI Semibold" FontSize="22" Opacity="0.795" Height="30"/>
+        <TextBlock x:Name="subtitleBlock" HorizontalAlignment="Left" Margin="10,85,0,0" TextWrapping="Wrap" Text="Community Edition v0.4.2" VerticalAlignment="Top" FontWeight="Normal" FontFamily="Segoe UI Semibold" FontSize="22" Opacity="0.795" Height="30"/>
 
         <TextBlock x:Name="bodyBlockMain" Margin="10,134,10,0" TextWrapping="Wrap" FontWeight="Normal" FontFamily="Segoe UI SemiBold" FontSize="14" Height="37" VerticalAlignment="Top">
             <Bold>Thanks for downloading RoundedTB. Expand the following categories for more information.</Bold>
